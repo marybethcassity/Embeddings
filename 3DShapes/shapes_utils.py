@@ -2,7 +2,6 @@ from matplotlib import pyplot as plt
 import matplotlib.offsetbox as offsetbox
 import numpy as np
 import h5py
-import mplcursors
 
 import tensorflow as tf
 from tensorflow.keras.applications.resnet50 import ResNet50, preprocess_input
