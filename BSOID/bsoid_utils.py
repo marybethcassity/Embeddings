@@ -9,6 +9,12 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from psutil import virtual_memory
 import umap
+import hdbscan
+
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.axes._axes import _log as matplotlib_axes_logger
+matplotlib_axes_logger.setLevel('ERROR')
 
 import streamlit as st
 
@@ -169,3 +175,72 @@ def subsample(processed_input_data, framerate):
         #st.markdown('You have opted to train on a cumulative of **{} minutes** total. '
         #            'If this does not sound right, the framerate might be wrong.'.format(train_size / 600))
         return train_size
+    
+# bsoid_app/extract_features.py # edited
+def learn_embeddings(scaled_features, features, UMAP_PARAMS, train_size):
+    input_feats = scaled_features.T
+
+    pca = PCA()
+    pca.fit(scaled_features.T)
+    num_dimensions = np.argwhere(np.cumsum(pca.explained_variance_ratio_) >= 0.7)[0][0] + 1
+    if train_size > input_feats.shape[0]:
+        train_size = input_feats.shape[0]
+    np.random.seed(0)
+    sampled_input_feats = input_feats[np.random.choice(input_feats.shape[0], train_size, replace=False)]
+    features_transposed = features.T
+    np.random.seed(0)
+    sampled_features = features_transposed[np.random.choice(features_transposed.shape[0],
+                                                                        train_size, replace=False)]
+
+    learned_embeddings = umap.UMAP(n_neighbors=60, n_components=num_dimensions,
+                                                **UMAP_PARAMS).fit(sampled_input_feats)
+
+    sampled_embeddings = learned_embeddings.embedding_
+
+    return sampled_embeddings
+
+# bsoid_app/clustering.py # edited 
+def hierarchy(cluster_range, sampled_embeddings, HDBSCAN_PARAMS):
+    max_num_clusters = -np.infty
+    num_clusters = []
+    min_cluster_size = np.linspace(cluster_range[0], cluster_range[1], 25)
+
+    for min_c in min_cluster_size:
+        min_size = int(round(min_c * 0.01 * sampled_embeddings.shape[0])) if int(round(min_c * 0.01 * sampled_embeddings.shape[0])) > 1 else 2 # figure this out 3/13/24
+        learned_hierarchy = hdbscan.HDBSCAN(
+            prediction_data=True, min_cluster_size=min_size,
+            **HDBSCAN_PARAMS).fit(sampled_embeddings)
+        num_clusters.append(len(np.unique(learned_hierarchy.labels_)))
+        if num_clusters[-1] > max_num_clusters:
+            max_num_clusters = num_clusters[-1]
+            retained_hierarchy = learned_hierarchy
+    assignments = retained_hierarchy.labels_
+    assign_prob = hdbscan.all_points_membership_vectors(retained_hierarchy)
+    soft_assignments = np.argmax(assign_prob, axis=1)
+
+    return assignments 
+
+# bsoid_app/bsoid_utilities/visuals.py
+#def plot_classes(data, assignments):
+#   """ Plot umap_embeddings for HDBSCAN assignments
+#    :param data: 2D array, umap_embeddings
+#    :param assignments: 1D array, HDBSCAN assignments
+#    """
+def plot_classes(sampled_embeddings, assignments, file):
+    sampled_embeddings_filtered = sampled_embeddings[assignments>=0]
+    assignments_filtered = assignments[assignments>=0]    
+    uk = list(np.unique(assignments_filtered))
+    R = np.linspace(0, 1, len(uk))
+    cmap = plt.cm.get_cmap("Spectral")(R)
+    umap_x, umap_y, umap_z = sampled_embeddings_filtered[:, 0], sampled_embeddings_filtered[:, 1], sampled_embeddings_filtered[:, 2]
+    fig = plt.figure(figsize=(8, 8))
+    ax = fig.add_subplot(111, projection='3d')
+    for g in np.unique(assignments_filtered):
+        idx = np.where(np.array(assignments_filtered) == g)
+        ax.scatter(umap_x[idx], umap_y[idx], umap_z[idx], c=cmap[g],
+                    label=g, s=0.4, marker='o', alpha=0.8)
+    ax.set_xlabel('Dim. 1')
+    ax.set_ylabel('Dim. 2')
+    ax.set_zlabel('Dim. 3')
+    plt.title(file)
+    plt.legend(ncol=3, markerscale=6)
