@@ -18,6 +18,8 @@ matplotlib_axes_logger.setLevel('ERROR')
 
 import streamlit as st
 
+import plotly.express as px
+
 # bsoid_app/bsoid_utilities/likelihoodprocessing.py
 def boxcar_center(a, n):
     a1 = pd.Series(a)
@@ -233,7 +235,7 @@ def plot_classes(sampled_embeddings, assignments, file):
     R = np.linspace(0, 1, len(uk))
     cmap = plt.cm.get_cmap("Spectral")(R)
     umap_x, umap_y, umap_z = sampled_embeddings_filtered[:, 0], sampled_embeddings_filtered[:, 1], sampled_embeddings_filtered[:, 2]
-    fig = plt.figure(figsize=(8, 8))
+    fig = plt.figure(figsize=(9, 9))
     ax = fig.add_subplot(111, projection='3d')
     for g in np.unique(assignments_filtered):
         idx = np.where(np.array(assignments_filtered) == g)
@@ -242,5 +244,30 @@ def plot_classes(sampled_embeddings, assignments, file):
     ax.set_xlabel('Dim. 1')
     ax.set_ylabel('Dim. 2')
     ax.set_zlabel('Dim. 3')
-    plt.title(file)
+    plt.title(file.replace(".csv", ""))
     plt.legend(ncol=3, markerscale=6)
+    return fig
+
+def create_plotly(sampled_embeddings, assignments, file):
+    sampled_embeddings_filtered = sampled_embeddings[assignments>=0]
+    assignments_filtered = assignments[assignments>=0]    
+    uk = list(np.unique(assignments_filtered))
+    #R = np.linspace(0, 1, len(uk))
+    #cmap = plt.cm.get_cmap("Spectral")(R)
+    umap_x, umap_y, umap_z = sampled_embeddings_filtered[:, 0], sampled_embeddings_filtered[:, 1], sampled_embeddings_filtered[:, 2]
+    
+    fig = px.scatter_3d(x=umap_x, y=umap_y, z=umap_z, color=assignments_filtered.astype(str), 
+                        labels={'color': 'Assignment'},
+                        title=file.replace(".csv", ""))
+
+  
+    fig.update_layout(scene=dict(
+                        xaxis_title='Dim. 1',
+                        yaxis_title='Dim. 2',
+                        zaxis_title='Dim. 3'),
+                        legend_title_text='Assignment')
+
+    
+    fig.update_traces(marker_size=1)
+    fig.show()
+    return fig
